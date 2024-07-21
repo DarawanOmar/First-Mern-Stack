@@ -9,12 +9,14 @@ datasource db {
 
 model User {
   id        String   @id @default(cuid())
-  username  String   @unique
+  name      String   @unique
   email     String   @unique
+  avatar    String
   password  String
-  gender    Gender
+  gender    GENDER
   role      Role     @default(USER)
   post      Post[]
+  token     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -36,7 +38,7 @@ enum Role {
   ADMIN
 }
 
-enum Gender {
+enum GENDER {
   MALE
   FEMALE
 }
