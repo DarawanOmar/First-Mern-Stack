@@ -37,12 +37,6 @@ export const Register = async (req, res) => {
       },
     });
     if (newUser) {
-      // // generate token in a sec
-      generateToken(newUser.id, res);
-      await prisma.user.update({
-        where: { email: newUser.email },
-        data: { token: generateToken(newUser.id, res) },
-      });
       res.status(201).json({
         message: "User created successfully",
         data: {
@@ -82,11 +76,28 @@ export const Login = async (req, res) => {
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
-    generateToken(user.id, res);
+    // Access Token (short lifespan)
+    const accessToken = generateToken(
+      user.id,
+      res,
+      "5m", // 5 minutes
+      "accessToken",
+      5 * 60 * 1000 // 5 minutes in milliseconds
+    );
+
+    // Refresh Token (long lifespan)
+    const refreshToken = generateToken(
+      user.id,
+      res,
+      "15d", // 15 days
+      "refreshToken",
+      15 * 24 * 60 * 60 * 1000 // 15 days in milliseconds
+    );
 
     res.status(200).json({
       message: "Login Success",
-      data: {
+      token: accessToken,
+      user: {
         id: user.id,
         name: user.name,
         email: user.email,
@@ -99,6 +110,7 @@ export const Login = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 export const Logout = (req, res) => {
   try {
     res.cookie("jwt", "", { maxAge: 0 });
@@ -109,23 +121,28 @@ export const Logout = (req, res) => {
 };
 
 export const getMe = async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  res.status(200).json({
+    user: req.user,
+    tset: "test",
+    message: "User found",
+  });
+  // try {
+  //   const user = await prisma.user.findUnique({ where: { id: req.user.id } });
 
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+  //   if (!user) {
+  //     return res.status(404).json({ error: "User not found" });
+  //   }
 
-    res.status(200).json({
-      id: user.id,
-      username: user.name,
-      email: user.email,
-      role: user.role,
-      gender: user.gender,
-      profilePic: user.avatar,
-    });
-  } catch (error) {
-    console.log("Error in getMe controller", error.message);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
+  //   res.status(200).json({
+  //     id: user.id,
+  //     username: user.name,
+  //     email: user.email,
+  //     role: user.role,
+  //     gender: user.gender,
+  //     profilePic: user.avatar,
+  //   });
+  // } catch (error) {
+  //   console.log("Error in getMe controller", error.message);
+  //   res.status(500).json({ error: "Internal Server Error" });
+  // }
 };

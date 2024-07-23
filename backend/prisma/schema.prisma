@@ -16,6 +16,7 @@ model User {
   gender    GENDER
   role      Role     @default(USER)
   post      Post[]
+  profile   Profile?
   token     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -31,6 +32,25 @@ model Post {
   authorId  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// model User {
+//   id      Int      @id @default(autoincrement())
+//   email   String   @unique
+//   profile Profile?
+// }
+
+model Profile {
+  id           Int       @id @default(autoincrement())
+  bio          String?
+  phone        String?
+  dateOfBirth  DateTime?
+  address      String?
+  city         String?
+  country      String?
+  coverPicture String?
+  userId       String    @unique
+  user         User      @relation(fields: [userId], references: [id])
 }
 
 enum Role {
