@@ -1,24 +1,29 @@
 import jwt from "jsonwebtoken";
 import prisma from "../db/prisma.js";
-import generateToken from "../utils/generateToken.js";
+import generateToken, { setTokenCookie } from "../utils/generateToken.js";
 
 const protectRoute = async (req, res, next) => {
   try {
-    const accessToken = req.cookies.accessToken;
-
+    let accessToken = req.cookies.accessToken;
+    if (accessToken == undefined) {
+      const header = req.headers["authorization"];
+      accessToken = header && header.split(" ")[1];
+    } else {
+      accessToken = req.cookies.accessToken;
+    }
     if (!accessToken) {
       const tokenRenewed = await renewToken(req, res);
       if (tokenRenewed) {
-        console.log("Renew Token Success");
         return next();
       } else {
-        return; // End the middleware execution if no valid tokens are found
+        return res
+          .status(401)
+          .json({ message: "No valid Refresh tokens found" });
       }
     }
-
     jwt.verify(accessToken, process.env.JWT_SECRET, async (err, decoded) => {
       if (err) {
-        return res.status(401).json({ valid: false, message: "Invalid Token" });
+        return res.status(401).json({ message: "Invalid token" });
       }
 
       req.userId = decoded.userId;
@@ -36,31 +41,37 @@ const protectRoute = async (req, res, next) => {
       next();
     });
   } catch (error) {
-    console.log("Error in protectRoute middleware", error.message);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.log(error);
+    res.status(500).json({ error: "Server error" });
   }
 };
 
 const renewToken = async (req, res) => {
   const refreshToken = req.cookies.refreshToken;
+
   if (!refreshToken) {
-    res.status(401).json({ valid: false, message: "No Refresh token" });
     return false;
   }
 
   try {
+    const storedToken = await prisma.refreshToken.findUnique({
+      where: { token: refreshToken },
+    });
+    if (!storedToken || new Date() > storedToken.expiresAt) {
+      return false;
+    }
+
     const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
-    generateToken(
-      decoded.userId,
+    const newAccessToken = generateToken(decoded.userId, "15d");
+    setTokenCookie(
       res,
-      "5m", // 5 minutes
+      newAccessToken,
       "accessToken",
-      5 * 60 * 1000 // 5 minutes in milliseconds
+      15 * 24 * 60 * 60 * 1000
     );
 
     return true;
   } catch (err) {
-    res.status(401).json({ valid: false, message: "Invalid Refresh Token" });
     return false;
   }
 };

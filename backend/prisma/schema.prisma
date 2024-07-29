@@ -8,16 +8,21 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  email     String   @unique
-  avatar    String
-  password  String
-  gender    GENDER
-  role      Role     @default(USER)
-  post      Post[]
-  profile   Profile?
-  token     String?
+  id       String   @id @default(cuid())
+  name     String   @unique
+  email    String   @unique
+  avatar   String
+  password String
+  gender   GENDER
+  role     Role     @default(USER)
+  profile  Profile?
+  token    String?
+
+  post         Post[]
+  like         Like[]
+  favorites    Favorite[]
+  refreshToken RefreshToken[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -26,10 +31,15 @@ model Post {
   id        String   @id @default(cuid())
   title     String
   content   String
-  image     String   @default("https://img.freepik.com/free-photo/3d-illustration-happy-man-with-backpack-tablet_1057-45577.jpg?ga=GA1.1.630880643.1695043245&semt=ais_user_ai_gen")
-  published Boolean  @default(false)
-  author    User     @relation(fields: [authorId], references: [id])
-  authorId  String
+  image     String?  @default("https://img.freepik.com/free-photo/3d-illustration-happy-man-with-backpack-tablet_1057-45577.jpg?ga=GA1.1.630880643.1695043245&semt=ais_user_ai_gen")
+  published Boolean? @default(false)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  like     Like[]
+  favorite Favorite[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -45,6 +55,40 @@ model Profile {
   coverPicture String?
   userId       String    @unique
   user         User      @relation(fields: [userId], references: [id])
+}
+
+model Like {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Favorite {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id])
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  expiresAt DateTime
 }
 
 enum Role {

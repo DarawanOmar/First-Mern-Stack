@@ -1,39 +1,39 @@
 import prisma from "../db/prisma.js";
 import bcryptjs from "bcryptjs";
-import generateToken from "../utils/generateToken.js";
+import generateToken, { setTokenCookie } from "../utils/generateToken.js";
+import { LoginValidation } from "../validations/LoginValidation.js";
+import { changeToErrorObject } from "../functions/joiError.js";
 
 export const Register = async (req, res) => {
   try {
-    const { email, password, name, gender, confirm_password } = req.body;
-
-    if (!name || !email || !password || !confirm_password) {
-      return res.status(400).json({ error: "Please fill in all fields" });
+    const { error, value } = LoginValidation.register(req.body);
+    if (error) {
+      return res.status(400).json(changeToErrorObject(error));
     }
-
-    if (password !== confirm_password) {
+    if (value.password !== value.confirmPassword) {
       return res.status(400).json({ error: "Passwords don't match" });
     }
 
-    const user = await prisma.user.findUnique({ where: { name } });
+    const user = await prisma.user.findUnique({ where: { name: value.name } });
 
     if (user) {
       return res.status(400).json({ error: "user already exists" });
     }
 
     const salt = await bcryptjs.genSalt(10);
-    const hashedPassword = await bcryptjs.hash(password, salt);
+    const hashedPassword = await bcryptjs.hash(value.password, salt);
 
-    const boyProfilePic = `https://avatar.iran.liara.run/public/boy?name=${name}`;
-    const girlProfilePic = `https://avatar.iran.liara.run/public/girl?name=${name}`;
+    const boyProfilePic = `https://avatar.iran.liara.run/public/boy?name=${value.name}`;
+    const girlProfilePic = `https://avatar.iran.liara.run/public/girl?name=${value.name}`;
 
     const newUser = await prisma.user.create({
       data: {
-        email,
-        gender: gender ?? "MALE",
+        email: value.email,
+        gender: "MALE",
         password: hashedPassword,
         role: "USER",
-        name,
-        avatar: gender === "male" ? boyProfilePic : girlProfilePic,
+        name: value.name,
+        avatar: boyProfilePic,
       },
     });
     if (newUser) {
@@ -58,44 +58,41 @@ export const Register = async (req, res) => {
 
 export const Login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: "Please fill in all fields" });
+    const { error, value } = LoginValidation.login(req.body);
+    if (error) {
+      return res.status(400).json(changeToErrorObject(error));
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email: value.email },
+    });
 
     if (!user) {
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
-    const isMatch = await bcryptjs.compare(password, user.password);
+    const isMatch = await bcryptjs.compare(value.password, user.password);
 
     if (!isMatch) {
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
-    // Access Token (short lifespan)
-    const accessToken = generateToken(
-      user.id,
-      res,
-      "5m", // 5 minutes
-      "accessToken",
-      5 * 60 * 1000 // 5 minutes in milliseconds
-    );
+    const accessToken = generateToken(user.id, "15d");
+    const refreshToken = generateToken(user.id, "15d");
 
-    // Refresh Token (long lifespan)
-    const refreshToken = generateToken(
-      user.id,
-      res,
-      "15d", // 15 days
-      "refreshToken",
-      15 * 24 * 60 * 60 * 1000 // 15 days in milliseconds
-    );
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    setTokenCookie(res, accessToken, "accessToken", 15 * 24 * 60 * 60 * 1000);
+    setTokenCookie(res, refreshToken, "refreshToken", 15 * 24 * 60 * 60 * 1000);
 
     res.status(200).json({
-      message: "Login Success",
+      message: "Login successful",
       token: accessToken,
       user: {
         id: user.id,
@@ -111,38 +108,64 @@ export const Login = async (req, res) => {
   }
 };
 
-export const Logout = (req, res) => {
+export const Logout = async (req, res) => {
   try {
-    res.cookie("jwt", "", { maxAge: 0 });
-    res.status(200).json({ message: "Logged out successfully" });
+    const refreshToken = req.cookies.refreshToken;
+    await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+
+    res.clearCookie("accessToken");
+    res.clearCookie("refreshToken");
+    res.status(200).json({ message: "Logout successful" });
   } catch (error) {
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ error: "Server error" });
   }
 };
 
 export const getMe = async (req, res) => {
-  res.status(200).json({
-    user: req.user,
-    tset: "test",
-    message: "User found",
-  });
-  // try {
-  //   const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { id: true, name: true, email: true, avatar: true, role: true },
+    });
 
-  //   if (!user) {
-  //     return res.status(404).json({ error: "User not found" });
-  //   }
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
-  //   res.status(200).json({
-  //     id: user.id,
-  //     username: user.name,
-  //     email: user.email,
-  //     role: user.role,
-  //     gender: user.gender,
-  //     profilePic: user.avatar,
-  //   });
-  // } catch (error) {
-  //   console.log("Error in getMe controller", error.message);
-  //   res.status(500).json({ error: "Internal Server Error" });
-  // }
+    res.status(200).json(user);
+  } catch (error) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const renewToken = async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({ message: "No refresh token provided" });
+    }
+
+    const storedToken = await prisma.refreshToken.findUnique({
+      where: { token: refreshToken },
+    });
+    if (!storedToken || new Date() > storedToken.expiresAt) {
+      return res
+        .status(401)
+        .json({ message: "Invalid or expired refresh token" });
+    }
+
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    const newAccessToken = generateToken(decoded.userId, "15d");
+    setTokenCookie(
+      res,
+      newAccessToken,
+      "accessToken",
+      15 * 24 * 60 * 60 * 1000
+    );
+
+    res.status(200).json({ token: newAccessToken });
+  } catch (error) {
+    res.status(500).json({ error: "Server error" });
+  }
 };
